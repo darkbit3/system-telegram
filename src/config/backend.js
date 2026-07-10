@@ -3,21 +3,16 @@ const normalizeBaseUrl = (value) => {
   return String(value).trim().replace(/\/+$/, '');
 };
 
+// Production URL — always use the deployed backend
 const BACKEND_URL =
   normalizeBaseUrl(process.env.BACKEND_URL) ||
-  normalizeBaseUrl(process.env.RENDER_EXTERNAL_URL) ||
-  normalizeBaseUrl(process.env.VITE_BACKEND_URL) ||
-  'http://localhost:5000';
+  'https://system-backend-jbnd.onrender.com';
 
-// Warn loudly on startup if still pointing at localhost in a non-local env
-if (
-  BACKEND_URL.includes('localhost') &&
-  process.env.RENDER
-) {
+// Warn if still pointing at localhost in a Render environment
+if (BACKEND_URL.includes('localhost') && process.env.RENDER) {
   console.warn(
-    '[WARN] BACKEND_URL is set to localhost but this process is running on Render.\n' +
-    '       Set BACKEND_URL in your Render environment variables to the deployed backend URL.\n' +
-    '       Example: https://your-backend.onrender.com'
+    '[WARN] BACKEND_URL is localhost but running on Render.\n' +
+    '       Set BACKEND_URL=https://system-backend-jbnd.onrender.com in Render env vars.'
   );
 }
 

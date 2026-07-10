@@ -1,6 +1,6 @@
 services:
-  - type: worker          # Background Worker — no open port required
-    name: telegram-bot
+  - type: web             # Web Service — health-check server keeps the port open
+    name: system-telegram
     runtime: node
     buildCommand: npm install
     startCommand: node src/bot.js
@@ -8,4 +8,4 @@ services:
       - key: BOT_TOKEN
         sync: false       # Set this manually in the Render dashboard (secret)
       - key: BACKEND_URL
-        sync: false       # e.g. https://your-system-backend.onrender.com
+        value: https://system-backend-jbnd.onrender.com
