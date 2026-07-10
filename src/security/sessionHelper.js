@@ -5,6 +5,9 @@
  * "send /start to login again", we silently request their phone number.
  * When they share it, handleContact detects they already exist and calls
  * autoLoginByTelegramId — no password needed for re-auth.
+ *
+ * tokenManager methods are now async (backend-backed); all callers here
+ * await them accordingly.
  */
 
 const axios = require('axios');
@@ -15,7 +18,6 @@ const logger = require('../utils/logger');
 
 /**
  * Silently request phone number for re-authentication.
- * Call this anywhere you would have said "session expired, send /start".
  */
 const requestReauth = async (bot, chatId) => {
   await bot.sendMessage(
@@ -36,7 +38,7 @@ const requestReauth = async (bot, chatId) => {
 /**
  * Auto-login a user by telegram_id only — no password.
  * Used when re-authenticating an existing user after session expiry.
- * Returns true on success, false on failure.
+ * Returns { success: true, username } or { success: false, notFound? }.
  */
 const autoLoginByTelegramId = async (bot, chatId, telegramId) => {
   try {
@@ -45,23 +47,25 @@ const autoLoginByTelegramId = async (bot, chatId, telegramId) => {
     });
 
     if (res.data.success) {
-      tokenManager.storeToken(telegramId, res.data.token, res.data.userId);
+      await tokenManager.storeToken(telegramId, res.data.token, res.data.userId);
       return { success: true, username: res.data.username };
     }
     return { success: false };
   } catch (err) {
-    logger.error({ telegramId, err: err.response?.data?.error || err.message }, 'auto-login failed');
+    logger.error(
+      { telegramId, err: err.response?.data?.error || err.message },
+      'auto-login failed'
+    );
     return { success: false, notFound: err.response?.status === 404 };
   }
 };
 
 /**
- * requireAuth — drop-in replacement for the inline requireAuth helpers.
- * If session exists → returns token.
- * If expired → triggers phone re-auth silently, returns null.
+ * requireAuth — returns the token if the session is valid, otherwise
+ * triggers silent phone re-auth and returns null.
  */
 const requireAuth = async (bot, chatId, telegramId) => {
-  const token = tokenManager.getToken(telegramId);
+  const token = await tokenManager.getToken(telegramId);
   if (token) return token;
 
   await requestReauth(bot, chatId);

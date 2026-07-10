@@ -1,9 +1,10 @@
 const tokenManager = require('../security/tokenManager');
 
 const handleHelp = async (bot, msg) => {
-  const chatId    = msg.chat.id;
+  const chatId     = msg.chat.id;
   const telegramId = msg.from.id;
-  const isLoggedIn = !!tokenManager.getSession(telegramId);
+  const session    = await tokenManager.getSession(telegramId);
+  const isLoggedIn = !!session;
 
   const text =
     `ℹ️ *Help — Telegram Games Bot*\n\n` +

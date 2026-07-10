@@ -11,42 +11,30 @@ require('dotenv').config();
 const { BACKEND_URL } = require('../config/backend');
 const logger = require('../utils/logger');
 
-// Command handler
 const handleCommands = (bot) => {
-  bot.onText(/\/start/, (msg) => {
-    handleStart(bot, msg);
-  });
+  bot.onText(/\/start/, (msg) => handleStart(bot, msg));
 
-  bot.onText(/\/menu/, (msg) => {
-    handleMenu(bot, msg);
-  });
+  bot.onText(/\/menu/, (msg) => handleMenu(bot, msg));
 
-  bot.onText(/\/help/, (msg) => {
-    handleHelp(bot, msg);
-  });
+  bot.onText(/\/help/, (msg) => handleHelp(bot, msg));
 
   bot.onText(/\/wallet/, async (msg) => {
     const chatId     = msg.chat.id;
     const telegramId = msg.from.id;
-    if (!tokenManager.getSession(telegramId)) {
-      await requestReauth(bot, chatId);
-      return;
-    }
-    showWalletMenu(bot, chatId, telegramId);
+    const session    = await tokenManager.getSession(telegramId);
+    if (!session) { await requestReauth(bot, chatId); return; }
+    await showWalletMenu(bot, chatId, telegramId);
   });
 
   bot.onText(/\/balance/, async (msg) => {
     const chatId     = msg.chat.id;
     const telegramId = msg.from.id;
-    const session    = tokenManager.getSession(telegramId);
-    if (!session) {
-      await requestReauth(bot, chatId);
-      return;
-    }
-    const token = tokenManager.getToken(telegramId);
+    const session    = await tokenManager.getSession(telegramId);
+    if (!session) { await requestReauth(bot, chatId); return; }
+    const token = await tokenManager.getToken(telegramId);
     try {
       const res = await axios.get(`${BACKEND_URL}/api/users/${session.userId}/balance`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       const bal = res.data.balance;
       bot.sendMessage(
@@ -63,29 +51,22 @@ const handleCommands = (bot) => {
   bot.onText(/\/transactions/, async (msg) => {
     const chatId     = msg.chat.id;
     const telegramId = msg.from.id;
-    if (!tokenManager.getSession(telegramId)) {
-      await requestReauth(bot, chatId);
-      return;
-    }
-    showTransactions(bot, chatId, telegramId);
+    const session    = await tokenManager.getSession(telegramId);
+    if (!session) { await requestReauth(bot, chatId); return; }
+    await showTransactions(bot, chatId, telegramId);
   });
 
-  // Cancel any in-progress flow
-  bot.onText(/\/cancel/, (msg) => {
+  bot.onText(/\/cancel/, async (msg) => {
     const chatId = msg.chat.id;
-    conversationState.clearState(chatId);
+    await conversationState.clearState(chatId);
     bot.sendMessage(chatId, '❌ Cancelled. Send /start to begin again.');
   });
 
-  // All inline-keyboard button taps go through this single handler
   registerCallbackHandler(bot);
 };
 
-// Contact handler (phone number sharing)
 const handleContacts = (bot) => {
-  bot.on('contact', (msg) => {
-    handleContact(bot, msg);
-  });
+  bot.on('contact', (msg) => handleContact(bot, msg));
 };
 
 module.exports = { handleCommands, handleContacts };

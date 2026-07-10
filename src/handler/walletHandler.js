@@ -6,7 +6,6 @@ const { requireAuth } = require('../security/sessionHelper');
 const { BACKEND_URL } = require('../config/backend');
 const logger = require('../utils/logger');
 
-// ── Payment methods ───────────────────────────────────────────────────────────
 const DEPOSIT_METHODS = [
   { id: 'telebirr',  label: '📱 TeleBirr',   info: 'TeleBirr Account: *0911000000*\nName: *TG Games*' },
   { id: 'cbe',       label: '🏦 CBE',         info: 'CBE Account: *1000123456789*\nName: *TG Games Ltd*' },
@@ -27,16 +26,14 @@ const WITHDRAW_METHODS = [
   { id: 'mpesa',     label: '📲 M-PESA' },
 ];
 
-// ── Conversation steps ────────────────────────────────────────────────────────
 const WALLET_STEPS = {
-  DEPOSIT_AMOUNT:   'AWAITING_DEPOSIT_AMOUNT',
-  DEPOSIT_TX_NUM:   'AWAITING_DEPOSIT_TX_NUM',
-  WITHDRAW_AMOUNT:  'AWAITING_WITHDRAW_AMOUNT',
-  WITHDRAW_ACCT:    'AWAITING_WITHDRAW_ACCT',
-  CHECK_TX_REF:     'AWAITING_CHECK_TX_REF',
+  DEPOSIT_AMOUNT:  'AWAITING_DEPOSIT_AMOUNT',
+  DEPOSIT_TX_NUM:  'AWAITING_DEPOSIT_TX_NUM',
+  WITHDRAW_AMOUNT: 'AWAITING_WITHDRAW_AMOUNT',
+  WITHDRAW_ACCT:   'AWAITING_WITHDRAW_ACCT',
+  CHECK_TX_REF:    'AWAITING_CHECK_TX_REF',
 };
 
-// ── helpers ───────────────────────────────────────────────────────────────────
 const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
@@ -49,7 +46,6 @@ const statusEmoji = (s) => {
   return '⏳ Pending';
 };
 
-// Generate a unique transaction ID: TXN-<timestamp>-<4 random hex chars>
 const generateTxId = () => {
   const ts   = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(16).slice(2, 6).toUpperCase();
@@ -60,35 +56,33 @@ const generateTxId = () => {
 const showWalletMenu = async (bot, chatId, telegramId) => {
   const token = await requireAuth(bot, chatId, telegramId);
   if (!token) return;
-  const session = tokenManager.getSession(telegramId);
+  const session = await tokenManager.getSession(telegramId);
 
   try {
     const res = await axios.get(`${BACKEND_URL}/api/users/${session.userId}/balance`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     });
-    const bal          = res.data.balance;
-    const total        = Number(bal?.balance || 0);
-    const withdrawable = total;
-    const nonWithdraw  = 0;
+    const bal   = res.data.balance;
+    const total = Number(bal?.balance || 0);
 
     const inlineKeyboard = {
       inline_keyboard: [
         [
-          { text: '💰 Deposit',           callback_data: 'wallet:deposit' },
-          { text: '💸 Withdraw',          callback_data: 'wallet:withdraw' },
+          { text: '💰 Deposit',          callback_data: 'wallet:deposit' },
+          { text: '💸 Withdraw',         callback_data: 'wallet:withdraw' },
         ],
-        [{ text: '📋 Transactions',       callback_data: 'wallet:transactions' }],
-        [{ text: '🔍 Check Transaction',  callback_data: 'wallet:check_tx' }],
-        [{ text: '🔙 Main Menu',          callback_data: 'wallet:back' }],
-      ]
+        [{ text: '📋 Transactions',      callback_data: 'wallet:transactions' }],
+        [{ text: '🔍 Check Transaction', callback_data: 'wallet:check_tx' }],
+        [{ text: '🔙 Main Menu',         callback_data: 'wallet:back' }],
+      ],
     };
 
     await bot.sendMessage(
       chatId,
       `💼 *Wallet*\n\n` +
       `💵 Total Balance:      *$${total.toFixed(2)}*\n` +
-      `✅ Withdrawable:       *$${withdrawable.toFixed(2)}*\n` +
-      `🔒 Non-Withdrawable:  *$${nonWithdraw.toFixed(2)}*\n` +
+      `✅ Withdrawable:       *$${total.toFixed(2)}*\n` +
+      `🔒 Non-Withdrawable:  *$0.00*\n` +
       `━━━━━━━━━━━━━━━\n` +
       `📊 Total:              *$${total.toFixed(2)}*\n\n` +
       `Choose an action:`,
@@ -126,18 +120,15 @@ const startDeposit = async (bot, chatId, telegramId) => {
 const selectDepositMethod = async (bot, chatId, telegramId, methodId) => {
   const token = await requireAuth(bot, chatId, telegramId);
   if (!token) return;
-  const session = tokenManager.getSession(telegramId);
+  const session = await tokenManager.getSession(telegramId);
 
   const method = DEPOSIT_METHODS.find(m => m.id === methodId);
-  if (!method) {
-    await bot.sendMessage(chatId, '❌ Invalid method. Please try again.');
-    return;
-  }
+  if (!method) { await bot.sendMessage(chatId, '❌ Invalid method. Please try again.'); return; }
 
-  conversationState.setState(chatId, WALLET_STEPS.DEPOSIT_AMOUNT, {
+  await conversationState.setState(chatId, WALLET_STEPS.DEPOSIT_AMOUNT, {
     telegramId,
-    userId: session.userId,
-    method: method.id,
+    userId:      session.userId,
+    method:      method.id,
     methodLabel: method.label,
   });
 
@@ -152,23 +143,18 @@ const selectDepositMethod = async (bot, chatId, telegramId, methodId) => {
   );
 };
 
-// ── DEPOSIT: Step 3 — got amount, ask bank transaction number ────────────────
+// ── DEPOSIT: Step 3 — got amount, ask bank transaction number ─────────────────
 const processDepositAmount = async (bot, msg, state) => {
   const chatId = msg.chat.id;
-  const text   = (msg.text || '').trim();
-  const amount = parseFloat(text);
+  const amount = parseFloat((msg.text || '').trim());
 
   if (isNaN(amount) || amount <= 0) {
-    conversationState.updateState(chatId, {});
-    await bot.sendMessage(chatId, '❌ Invalid amount. Please enter a positive number (e.g. `100`):',
-      { parse_mode: 'Markdown' });
+    await conversationState.updateState(chatId, {});
+    await bot.sendMessage(chatId, '❌ Invalid amount. Please enter a positive number (e.g. `100`):', { parse_mode: 'Markdown' });
     return;
   }
 
-  conversationState.setState(chatId, WALLET_STEPS.DEPOSIT_TX_NUM, {
-    ...state.data,
-    amount,
-  });
+  await conversationState.setState(chatId, WALLET_STEPS.DEPOSIT_TX_NUM, { ...state.data, amount });
 
   await bot.sendMessage(
     chatId,
@@ -180,25 +166,22 @@ const processDepositAmount = async (bot, msg, state) => {
   );
 };
 
-// ── DEPOSIT: Step 4 — got bank TX number, generate system TX ID and submit ───
+// ── DEPOSIT: Step 4 — got bank TX number, submit ──────────────────────────────
 const processDepositTxNum = async (bot, msg, state) => {
   const chatId     = msg.chat.id;
   const telegramId = msg.from.id;
   const txNumber   = (msg.text || '').trim();
 
   if (!txNumber) {
-    conversationState.updateState(chatId, {});
+    await conversationState.updateState(chatId, {});
     await bot.sendMessage(chatId, '❌ Please enter the transaction number from your receipt:');
     return;
   }
 
-  conversationState.clearState(chatId);
+  await conversationState.clearState(chatId);
 
-  const token = tokenManager.getToken(telegramId);
-  if (!token) {
-    await requireAuth(bot, chatId, telegramId);
-    return;
-  }
+  const token = await tokenManager.getToken(telegramId);
+  if (!token) { await requireAuth(bot, chatId, telegramId); return; }
 
   const systemTxId = generateTxId();
 
@@ -206,9 +189,9 @@ const processDepositTxNum = async (bot, msg, state) => {
     await axios.post(
       `${BACKEND_URL}/api/admin/games/users/${state.data.userId}/request-deposit`,
       {
-        amount: state.data.amount,
-        method: state.data.method,
-        transaction_id: systemTxId,
+        amount:             state.data.amount,
+        method:             state.data.method,
+        transaction_id:     systemTxId,
         transaction_number: txNumber,
       },
       { headers: { Authorization: `Bearer ${token}` } }
@@ -229,8 +212,7 @@ const processDepositTxNum = async (bot, msg, state) => {
     await showWalletMenu(bot, chatId, telegramId);
   } catch (err) {
     logger.error({ chatId, err: err.message }, 'deposit submission failed');
-    await bot.sendMessage(chatId,
-      `❌ Failed to submit: ${err.response?.data?.error || 'Please try again.'}`);
+    await bot.sendMessage(chatId, `❌ Failed to submit: ${err.response?.data?.error || 'Please try again.'}`);
   }
 };
 
@@ -260,25 +242,22 @@ const startWithdraw = async (bot, chatId, telegramId) => {
 const selectWithdrawMethod = async (bot, chatId, telegramId, methodId) => {
   const token = await requireAuth(bot, chatId, telegramId);
   if (!token) return;
-  const session = tokenManager.getSession(telegramId);
+  const session = await tokenManager.getSession(telegramId);
 
   const method = WITHDRAW_METHODS.find(m => m.id === methodId);
-  if (!method) {
-    await bot.sendMessage(chatId, '❌ Invalid method. Please try again.');
-    return;
-  }
+  if (!method) { await bot.sendMessage(chatId, '❌ Invalid method. Please try again.'); return; }
 
   try {
     const res = await axios.get(`${BACKEND_URL}/api/users/${session.userId}/balance`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     });
     const currentBalance = Number(res.data.balance?.balance || 0);
 
-    conversationState.setState(chatId, WALLET_STEPS.WITHDRAW_AMOUNT, {
+    await conversationState.setState(chatId, WALLET_STEPS.WITHDRAW_AMOUNT, {
       telegramId,
-      userId: session.userId,
-      method: method.id,
-      methodLabel: method.label,
+      userId:       session.userId,
+      method:       method.id,
+      methodLabel:  method.label,
       currentBalance,
     });
 
@@ -299,17 +278,16 @@ const selectWithdrawMethod = async (bot, chatId, telegramId, methodId) => {
 // ── WITHDRAW: Step 3 — got amount, ask account number ────────────────────────
 const processWithdrawAmount = async (bot, msg, state) => {
   const chatId = msg.chat.id;
-  const text   = (msg.text || '').trim();
-  const amount = parseFloat(text);
+  const amount = parseFloat((msg.text || '').trim());
 
   if (isNaN(amount) || amount <= 0) {
-    conversationState.updateState(chatId, {});
+    await conversationState.updateState(chatId, {});
     await bot.sendMessage(chatId, '❌ Invalid amount. Enter a positive number:');
     return;
   }
 
   if (amount > state.data.currentBalance) {
-    conversationState.updateState(chatId, {});
+    await conversationState.updateState(chatId, {});
     await bot.sendMessage(
       chatId,
       `❌ Insufficient balance.\n\nAvailable: *$${state.data.currentBalance.toFixed(2)}*\nRequested: *$${amount.toFixed(2)}*\n\nEnter a smaller amount:`,
@@ -318,10 +296,7 @@ const processWithdrawAmount = async (bot, msg, state) => {
     return;
   }
 
-  conversationState.setState(chatId, WALLET_STEPS.WITHDRAW_ACCT, {
-    ...state.data,
-    amount,
-  });
+  await conversationState.setState(chatId, WALLET_STEPS.WITHDRAW_ACCT, { ...state.data, amount });
 
   await bot.sendMessage(
     chatId,
@@ -332,25 +307,22 @@ const processWithdrawAmount = async (bot, msg, state) => {
   );
 };
 
-// ── WITHDRAW: Step 4 — got account, generate TX ID and submit ─────────────────
+// ── WITHDRAW: Step 4 — got account, submit ────────────────────────────────────
 const processWithdrawAcct = async (bot, msg, state) => {
   const chatId     = msg.chat.id;
   const telegramId = msg.from.id;
   const acct       = (msg.text || '').trim();
 
   if (!acct) {
-    conversationState.updateState(chatId, {});
+    await conversationState.updateState(chatId, {});
     await bot.sendMessage(chatId, '❌ Please enter a valid account number:');
     return;
   }
 
-  conversationState.clearState(chatId);
+  await conversationState.clearState(chatId);
 
-  const token = tokenManager.getToken(telegramId);
-  if (!token) {
-    await requireAuth(bot, chatId, telegramId);
-    return;
-  }
+  const token = await tokenManager.getToken(telegramId);
+  if (!token) { await requireAuth(bot, chatId, telegramId); return; }
 
   const systemTxId = generateTxId();
 
@@ -358,9 +330,9 @@ const processWithdrawAcct = async (bot, msg, state) => {
     await axios.post(
       `${BACKEND_URL}/api/admin/games/users/${state.data.userId}/request-withdraw`,
       {
-        amount: state.data.amount,
-        method: state.data.method,
-        transaction_id: systemTxId,
+        amount:             state.data.amount,
+        method:             state.data.method,
+        transaction_id:     systemTxId,
         transaction_number: acct,
       },
       { headers: { Authorization: `Bearer ${token}` } }
@@ -381,8 +353,7 @@ const processWithdrawAcct = async (bot, msg, state) => {
     await showWalletMenu(bot, chatId, telegramId);
   } catch (err) {
     logger.error({ chatId, err: err.response?.data?.error || err.message }, 'withdraw submission failed');
-    await bot.sendMessage(chatId,
-      `❌ Failed to submit: ${err.response?.data?.error || 'Please try again.'}`);
+    await bot.sendMessage(chatId, `❌ Failed to submit: ${err.response?.data?.error || 'Please try again.'}`);
   }
 };
 
@@ -390,9 +361,9 @@ const processWithdrawAcct = async (bot, msg, state) => {
 const startCheckTransaction = async (bot, chatId, telegramId) => {
   const token = await requireAuth(bot, chatId, telegramId);
   if (!token) return;
-  const session = tokenManager.getSession(telegramId);
+  const session = await tokenManager.getSession(telegramId);
 
-  conversationState.setState(chatId, WALLET_STEPS.CHECK_TX_REF, {
+  await conversationState.setState(chatId, WALLET_STEPS.CHECK_TX_REF, {
     telegramId,
     userId: session.userId,
   });
@@ -413,18 +384,15 @@ const processCheckTxRef = async (bot, msg, state) => {
   const ref        = (msg.text || '').trim();
 
   if (!ref) {
-    conversationState.updateState(chatId, {});
+    await conversationState.updateState(chatId, {});
     await bot.sendMessage(chatId, '❌ Please enter a valid reference:');
     return;
   }
 
-  conversationState.clearState(chatId);
+  await conversationState.clearState(chatId);
 
-  const token = tokenManager.getToken(telegramId);
-  if (!token) {
-    await requireAuth(bot, chatId, telegramId);
-    return;
-  }
+  const token = await tokenManager.getToken(telegramId);
+  if (!token) { await requireAuth(bot, chatId, telegramId); return; }
 
   try {
     const res = await axios.get(
@@ -432,7 +400,6 @@ const processCheckTxRef = async (bot, msg, state) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const tx = res.data.transaction;
-
     const typeLabel = tx.type === 'deposit' ? '💰 Deposit' : '💸 Withdraw';
 
     await bot.sendMessage(
@@ -448,18 +415,18 @@ const processCheckTxRef = async (bot, msg, state) => {
       `━━━━━━━━━━━━━━━\n` +
       `📊 Status:     *${statusEmoji(tx.status)}*\n\n` +
       (tx.status === 'pending'  ? '⏳ Your request is being reviewed by admin.' : '') +
-      (tx.status === 'done'     ? '✅ This transaction has been completed.' : '') +
+      (tx.status === 'done'     ? '✅ This transaction has been completed.'     : '') +
       (tx.status === 'rejected' ? '❌ This transaction was rejected. Please contact support.' : ''),
       {
         parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [[{ text: '🔙 Back to Wallet', callback_data: 'wallet:menu' }]] }
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Back to Wallet', callback_data: 'wallet:menu' }]] },
       }
     );
   } catch (err) {
-    const msg404 = err.response?.status === 404;
+    const is404 = err.response?.status === 404;
     await bot.sendMessage(
       chatId,
-      msg404
+      is404
         ? `❌ *Transaction not found.*\n\nNo transaction with reference \`${ref}\` was found on your account.`
         : `❌ Could not check transaction: ${err.response?.data?.error || 'Please try again.'}`,
       { parse_mode: 'Markdown' }
@@ -471,7 +438,7 @@ const processCheckTxRef = async (bot, msg, state) => {
 const showTransactions = async (bot, chatId, telegramId) => {
   const token = await requireAuth(bot, chatId, telegramId);
   if (!token) return;
-  const session = tokenManager.getSession(telegramId);
+  const session = await tokenManager.getSession(telegramId);
 
   try {
     const res = await axios.get(
@@ -481,9 +448,10 @@ const showTransactions = async (bot, chatId, telegramId) => {
     const txs = res.data.transactions || [];
 
     if (txs.length === 0) {
-      await bot.sendMessage(chatId,
-        '📋 *Transaction History*\n\nNo transactions yet.',
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Back', callback_data: 'wallet:menu' }]] } });
+      await bot.sendMessage(chatId, '📋 *Transaction History*\n\nNo transactions yet.', {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Back', callback_data: 'wallet:menu' }]] },
+      });
       return;
     }
 
@@ -501,7 +469,7 @@ const showTransactions = async (bot, chatId, telegramId) => {
 
     await bot.sendMessage(chatId, text, {
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [[{ text: '🔙 Back to Wallet', callback_data: 'wallet:menu' }]] }
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Back to Wallet', callback_data: 'wallet:menu' }]] },
     });
   } catch (err) {
     logger.error({ chatId, err: err.message }, 'transactions list failed');
