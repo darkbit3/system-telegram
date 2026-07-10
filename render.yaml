@@ -1,0 +1,11 @@
+services:
+  - type: worker          # Background Worker — no open port required
+    name: telegram-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node src/bot.js
+    envVars:
+      - key: BOT_TOKEN
+        sync: false       # Set this manually in the Render dashboard (secret)
+      - key: BACKEND_URL
+        sync: false       # e.g. https://your-system-backend.onrender.com

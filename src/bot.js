@@ -7,16 +7,34 @@
  *   3. Surface polling errors as structured log lines, not crashes.
  *   4. Install process-level safety nets so unhandled rejections /
  *      uncaught exceptions are logged and the process stays alive.
+ *
+ * Sessions and conversation states are stored in the system-backend database
+ * via REST API calls to /api/bot/sessions and /api/bot/states.
+ * There is no local SQLite database in this process.
  */
 
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const logger      = require('./utils/logger');
+const http        = require('http');
+const { BACKEND_URL } = require('./config/backend');
+
+// ── Minimal health-check HTTP server ─────────────────────────────────────────
+// Render Web Services require at least one open port.
+// If you deploy this as a Background Worker on Render, this block is not
+// needed — background workers have no port requirement.
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ status: 'ok', service: 'telegram-bot' }));
+}).listen(PORT, () => {
+  logger.info({ port: PORT }, '🩺 Health-check server listening');
+});
 
 // ── Validate required environment ────────────────────────────────────────────
 const token = process.env.BOT_TOKEN;
 if (!token) {
-  logger.fatal('BOT_TOKEN is not set. Configure it in telegram/.env and restart.');
+  logger.fatal('BOT_TOKEN is not set. Configure it in your environment and restart.');
   process.exit(1);
 }
 
@@ -33,8 +51,6 @@ handleMessages(bot);
 
 // ── Polling errors — log but never crash ─────────────────────────────────────
 bot.on('polling_error', (err) => {
-  // 409 Conflict is normal when two instances start at the same time;
-  // everything else is worth a warn.
   const level = err.code === 'EFATAL' || String(err.message).includes('409')
     ? 'warn'
     : 'error';
@@ -42,14 +58,12 @@ bot.on('polling_error', (err) => {
 });
 
 // ── Process-level crash safety ────────────────────────────────────────────────
-// These handlers keep the process alive so users' SQLite-persisted sessions
-// and conversation states are not orphaned.  Errors are logged with full
-// stack traces so they are easy to trace in production logs.
-
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   logger.error(
-    { reason: reason instanceof Error ? reason.message : String(reason),
-      stack:  reason instanceof Error ? reason.stack  : undefined },
+    {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack:  reason instanceof Error ? reason.stack  : undefined,
+    },
     'unhandledRejection — promise was not caught'
   );
   // Do NOT exit — the bot keeps running for all other users.
@@ -58,9 +72,6 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err, origin) => {
   logger.error({ err: err.message, stack: err.stack, origin }, 'uncaughtException');
   // Do NOT exit — same reasoning as above.
-  // Note: if this fires it means something truly unexpected happened;
-  // keep an eye on logs and consider graceful-restarts via a process
-  // manager (pm2 / systemd) for persistent fatal errors.
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
@@ -71,6 +82,6 @@ const shutdown = (signal) => {
 process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-logger.info({ backendUrl: process.env.BACKEND_URL }, '🤖 Telegram bot started');
+logger.info({ backendUrl: BACKEND_URL }, '🤖 Telegram bot started');
 
 module.exports = bot;
