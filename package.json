@@ -1,0 +1,28 @@
+{
+  "name": "telegram-games-bot",
+  "version": "1.0.0",
+  "description": "Telegram Games System Bot",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "nodemon src/bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "games"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "better-sqlite3": "9.6.0",
+    "dotenv": "^16.3.1",
+    "node-telegram-bot-api": "^0.65.0",
+    "pino": "9.3.2",
+    "pino-pretty": "11.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
