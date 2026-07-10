@@ -27,8 +27,8 @@ const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ status: 'ok', service: 'telegram-bot' }));
-}).listen(PORT, () => {
-  logger.info({ port: PORT }, '🩺 Health-check server listening');
+}).listen(PORT, '0.0.0.0', () => {
+  logger.info({ port: PORT }, '🩺 Health-check server listening on 0.0.0.0');
 });
 
 // ── Validate required environment ────────────────────────────────────────────
