@@ -209,6 +209,16 @@ const showGames = async (bot, chatId, telegramId) => {
       rows.push(row);
     }
 
+    // DEBUG: show the generated URLs so you can verify token+launch params
+    for (let i = 0; i < games.length; i++) {
+      const debugUrl = await buildGameUrl(games[i]);
+      if (debugUrl) {
+        await bot.sendMessage(chatId, `🔗 *[DEBUG] ${games[i].name}*\n\`${debugUrl}\``, { parse_mode: 'Markdown' });
+      } else {
+        await bot.sendMessage(chatId, `⚠️ *[DEBUG] ${games[i].name}* — no launch URL built (no token configured?)`, { parse_mode: 'Markdown' });
+      }
+    }
+
     await bot.sendMessage(chatId, '🎮 *Choose a game:*', {
       reply_markup: { inline_keyboard: rows },
       parse_mode: 'Markdown',
