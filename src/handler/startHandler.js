@@ -1,5 +1,9 @@
+const axios = require('axios');
 const tokenManager = require('../security/tokenManager');
 const conversationState = require('../security/conversationState');
+const { autoLoginByTelegramId } = require('../security/sessionHelper');
+const { BACKEND_URL } = require('../config/backend');
+const logger = require('../utils/logger');
 const { sendMainMenu } = require('./menuHandler');
 
 // /start command handler
@@ -15,6 +19,36 @@ const handleStart = async (bot, msg) => {
     await bot.sendMessage(chatId, '✅ Welcome Back!\n\nYou are already logged in.');
     await sendMainMenu(bot, chatId);
     return;
+  }
+
+  try {
+    const response = await axios.get(`${BACKEND_URL}/api/users/check/${telegramId}`);
+    if (response?.data?.exists) {
+      const user = response.data.user || {};
+      const loginResult = await autoLoginByTelegramId(bot, chatId, telegramId);
+
+      if (loginResult?.success) {
+        await bot.sendMessage(
+          chatId,
+          `✅ Welcome back, *${user.username || 'there'}*!\n\nYou have been logged in automatically.`,
+          { parse_mode: 'Markdown' }
+        );
+        await sendMainMenu(bot, chatId);
+        return;
+      }
+
+      await conversationState.setState(chatId, 'AWAITING_LOGIN_PASSWORD', {
+        telegramId,
+        username: user.username,
+      });
+      await bot.sendMessage(
+        chatId,
+        `✅ User Found!\n\nUsername: ${user.username || 'your account'}\n\nPlease enter your password to login:`
+      );
+      return;
+    }
+  } catch (error) {
+    logger.warn({ chatId, telegramId, err: error.message }, 'startHandler: registration check failed, falling back to phone prompt');
   }
 
   const welcomeMessage =

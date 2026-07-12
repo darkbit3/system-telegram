@@ -225,29 +225,30 @@ const showGames = async (bot, chatId, telegramId) => {
       const row = [];
       for (const game of [games[i], games[i + 1]].filter(Boolean)) {
         const launchUrl = await buildGameUrl(game);
-        row.push(
-          launchUrl
-            ? { text: `${getGameIcon(game.name)} ${game.name}`, web_app: { url: launchUrl } }
-            : { text: `${getGameIcon(game.name)} ${game.name}`, callback_data: `start_game:${game.id}` }
-        );
+        if (launchUrl) {
+          row.push({ text: `${getGameIcon(game.name)} ${game.name}`, web_app: { url: launchUrl } });
+        } else {
+          logger.debug({ chatId, gameId: game.id, gameName: game.name }, 'game omitted from menu because launch URL was unavailable');
+        }
       }
-      rows.push(row);
-    }
-
-    // DEBUG: show the generated URLs so you can verify token+launch params
-    for (let i = 0; i < games.length; i++) {
-      const debugUrl = await buildGameUrl(games[i]);
-      if (debugUrl) {
-        await bot.sendMessage(chatId, `🔗 *[DEBUG] ${games[i].name}*\n\`${debugUrl}\``, { parse_mode: 'Markdown' });
-      } else {
-        await bot.sendMessage(chatId, `⚠️ *[DEBUG] ${games[i].name}* — no launch URL built (no token configured?)`, { parse_mode: 'Markdown' });
+      if (row.length > 0) {
+        rows.push(row);
       }
     }
 
-    await bot.sendMessage(chatId, '🎮 *Choose a game:*', {
+    if (rows.length === 0) {
+      await bot.sendMessage(chatId, '🎮 *No games are currently available.*', { parse_mode: 'Markdown' });
+      return;
+    }
+
+    const sent = await bot.sendMessage(chatId, '🎮 *Choose a game:*', {
       reply_markup: { inline_keyboard: rows },
       parse_mode: 'Markdown',
     });
+
+    setTimeout(() => {
+      bot.deleteMessage(chatId, sent.message_id).catch(() => {});
+    }, 3 * 60 * 1000);
   } catch (error) {
     logger.error({ chatId, telegramId, err: error.message }, 'showGames failed');
     if (error.response?.data?.error === 'Token expired') {
