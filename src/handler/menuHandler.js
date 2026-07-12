@@ -6,6 +6,7 @@ const { requireAuth, requestReauth } = require('../security/sessionHelper');
 const { validateUsername, checkPasswordStrength } = require('../utils/validation');
 const { BACKEND_URL } = require('../config/backend');
 const logger = require('../utils/logger');
+const { buildMiniAppLaunchUrl } = require('../utils/miniAppLaunch');
 
 const PROFILE_UPDATE_STEPS = {
   USERNAME: 'AWAITING_PROFILE_USERNAME',
@@ -183,13 +184,20 @@ const showGames = async (bot, chatId, telegramId) => {
             },
           }
         );
-        const gameToken  = tkRes.data.token  || null;
-        const launchToken = tkRes.data.launch || null;
+        const gameToken = tkRes.data.token || null;
 
         if (!gameToken) return null; // no token configured for this game
 
-        const sep = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${sep}token=${encodeURIComponent(gameToken)}&launch=${encodeURIComponent(launchToken || '')}`;
+        return buildMiniAppLaunchUrl({
+          baseUrl,
+          gameToken,
+          launchData: {
+            phone: user?.phone_number || '',
+            username: user?.username || '',
+            balance: balanceRaw.toFixed(2),
+          },
+          secret: process.env.DAMA_LAUNCH_SECRET,
+        });
       } catch {
         return null; // token/launch not configured — fall back to callback
       }
@@ -347,8 +355,7 @@ const startGame = async (bot, chatId, telegramId, gameId) => {
     if (baseUrl) {
       // Fetch signed launch token — backend encrypts phone/username/balance
       // so they are never exposed raw in the URL.
-      let gameToken   = null;
-      let launchToken = null;
+      let gameToken = null;
       try {
         const tkRes = await axios.get(
           `${BACKEND_URL}/api/admin/games/game-tokens/launch/${gameId}`,
@@ -361,16 +368,21 @@ const startGame = async (bot, chatId, telegramId, gameId) => {
             },
           }
         );
-        gameToken   = tkRes.data.token  || null;
-        launchToken = tkRes.data.launch || null;
+        gameToken = tkRes.data.token || null;
       } catch (tkErr) {
         logger.warn({ chatId, gameId, err: tkErr.message }, 'startGame: launch token fetch failed');
       }
 
-      const sep       = baseUrl.includes('?') ? '&' : '?';
-      const launchUrl = gameToken
-        ? `${baseUrl}${sep}token=${encodeURIComponent(gameToken)}&launch=${encodeURIComponent(launchToken || '')}`
-        : baseUrl;
+      const launchUrl = buildMiniAppLaunchUrl({
+        baseUrl,
+        gameToken,
+        launchData: {
+          phone: user?.phone_number || '',
+          username: user?.username || '',
+          balance: balanceRaw.toFixed(2),
+        },
+        secret: process.env.DAMA_LAUNCH_SECRET,
+      }) || baseUrl;
 
       await bot.sendMessage(
         chatId,
